@@ -24,6 +24,10 @@ def _derive_key(passphrase: str, salt: bytes = b"mr-developer-md") -> bytes:
     )
     return base64.urlsafe_b64encode(kdf.derive(passphrase.encode()))
 
+def _sanitize_id(s: str) -> str:
+    # Replace characters that are unsafe in filenames with underscore
+    return ''.join(c if c.isalnum() or c in ('-', '_') else '_' for c in s)
+
 class Storage:
     def __init__(self, base_dir: str = './auth_states'):
         self.base = Path(base_dir)
@@ -33,35 +37,36 @@ class Storage:
             key = _derive_key(PASS_PHRASE)
             self._fernet = Fernet(key)
 
-    def _path_for(self, telegram_id: str, suffix: str):
-        return self.base / f"{telegram_id}.{suffix}.json"
+    def _path_for(self, owner_id: str, suffix: str):
+        safe = _sanitize_id(owner_id)
+        return self.base / f"{safe}.{suffix}.json"
 
-    def save_pairing(self, telegram_id: str, data: dict):
-        p = self._path_for(telegram_id, 'pairing')
+    def save_pairing(self, owner_id: str, data: dict):
+        p = self._path_for(owner_id, 'pairing')
         self._write_json(p, data)
 
-    def load_pairing(self, telegram_id: str):
-        p = self._path_for(telegram_id, 'pairing')
+    def load_pairing(self, owner_id: str):
+        p = self._path_for(owner_id, 'pairing')
         return self._read_json(p)
 
-    def delete_pairing(self, telegram_id: str):
-        p = self._path_for(telegram_id, 'pairing')
+    def delete_pairing(self, owner_id: str):
+        p = self._path_for(owner_id, 'pairing')
         if p.exists():
             p.unlink()
             return True
         return False
 
-    def save_session(self, telegram_id: str, data: dict):
-        p = self._path_for(telegram_id, 'session')
+    def save_session(self, owner_id: str, data: dict):
+        p = self._path_for(owner_id, 'session')
         data['updated_at'] = datetime.utcnow().isoformat()
         self._write_json(p, data)
 
-    def load_session(self, telegram_id: str):
-        p = self._path_for(telegram_id, 'session')
+    def load_session(self, owner_id: str):
+        p = self._path_for(owner_id, 'session')
         return self._read_json(p)
 
-    def delete_session(self, telegram_id: str):
-        p = self._path_for(telegram_id, 'session')
+    def delete_session(self, owner_id: str):
+        p = self._path_for(owner_id, 'session')
         if p.exists():
             p.unlink()
             return True
@@ -71,8 +76,10 @@ class Storage:
         out = []
         for f in self.base.glob('*.session.json'):
             try:
-                with f.open('r') as fh:
-                    out.append(json.load(fh))
+                # use the _read_json path to ensure decryption is applied when needed
+                obj = self._read_json(f)
+                if obj is not None:
+                    out.append(obj)
             except Exception:
                 continue
         return out
