@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
-"""Entry point to run the Telegram pairing bot with a friendly Railway-safe startup.
+"""Entry point to run the Telegram pairing bot with robust startup and import-time diagnostics.
 
-If TELEGRAM_TOKEN is missing the process will expose a small HTTP health endpoint
-so the container stays alive and Railway logs show a clear error message instead of
-crashing immediately.
+This file performs imports lazily and prints full tracebacks on import/run failures so
+platform logs (Railway) show the real error instead of a silent crash during module import.
 """
 import os
 import sys
 import threading
+import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 
 load_dotenv()
-
-from bot.telegram_bot import TelegramPairingBot
 
 PORT = int(os.getenv('PORT', os.getenv('RAILWAY_PORT', '8080')))
 
@@ -54,15 +52,27 @@ if __name__ == '__main__':
             print('Exiting on KeyboardInterrupt')
             sys.exit(1)
 
+    # Lazy import of the bot module so import errors are caught and logged cleanly
+    try:
+        from bot.telegram_bot import TelegramPairingBot
+    except Exception:
+        print('Failed to import bot.telegram_bot — printing traceback to help diagnose the issue:', file=sys.stderr)
+        traceback.print_exc()
+        # Keep process alive briefly so logs are captured by the host platform
+        try:
+            threading.Event().wait(60)
+        except KeyboardInterrupt:
+            pass
+        # Re-raise so the process exits with a non-zero status (deployment will show failure)
+        raise
+
     try:
         bot = TelegramPairingBot(token)
         bot.run()
-    except Exception as e:
-        # Log the exception clearly and keep process alive briefly to ensure logs are collected
-        import traceback
+    except Exception:
+        print('Exception while running the bot — printing traceback:', file=sys.stderr)
         traceback.print_exc()
-        print('Bot crashed: see traceback above', file=sys.stderr)
-        # keep process alive for a short while so logs are visible in Railway
+        # keep process alive briefly so logs are visible in Railway
         try:
             threading.Event().wait(10)
         except KeyboardInterrupt:
