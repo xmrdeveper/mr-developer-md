@@ -8,7 +8,7 @@ import json
 import logging
 from pathlib import Path
 from telegram import Update, ParseMode
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
 from bot.whatsapp_adapter import WhatsAppAdapter
 from bot.storage import Storage
 
@@ -75,6 +75,13 @@ class TelegramPairingBot:
         self.dp.add_handler(CommandHandler('settings', self.cmd_settings))
         self.dp.add_handler(CommandHandler('owner', self.cmd_owner))
 
+        # Debug: log every incoming update so we can see if updates arrive
+        try:
+            self.dp.add_handler(MessageHandler(Filters.all, self._debug_log_update), group=0)
+            logger.info('Debug update logger installed')
+        except Exception:
+            logger.exception('Failed to install debug update logger')
+
     def run(self):
         logger.info('Starting Telegram bot')
         try:
@@ -100,6 +107,13 @@ class TelegramPairingBot:
         except Exception:
             logger.exception('Telegram bot crashed')
             raise
+
+    # ---- Debug handler ----
+    def _debug_log_update(self, update: Update, context: CallbackContext):
+        try:
+            logger.info('Incoming update: %s', update)
+        except Exception:
+            logger.exception('Failed to log incoming update')
 
     # ---- User commands ----
     def cmd_start(self, update: Update, context: CallbackContext):
