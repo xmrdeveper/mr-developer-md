@@ -1,8 +1,7 @@
 """Telegram bot handlers for pairing and full command set including owner/admin commands.
 
-PUBLIC_MODE: when true (env PUBLIC_MODE=1/true/yes) the bot treats all users as owners
-and owner-only commands become available to everyone. Use with caution — dangerous commands
-(e.g., eval, terminal) remain gated by ALLOW_DANGEROUS which must be explicitly set.
+This trimmed variant only relies on TELEGRAM_TOKEN and BOT_USERNAME environment variables.
+It uses a fixed storage path /data/auth_states and disables owner/public/dangerous flags by default.
 """
 import os
 import json
@@ -16,20 +15,19 @@ from bot.storage import Storage
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Keep configuration minimal: only TELEGRAM_TOKEN and BOT_USERNAME are read from env
 OWNER_IDS = set()
-if os.getenv('OWNER_IDS'):
-    OWNER_IDS = set(x.strip() for x in os.getenv('OWNER_IDS').split(','))
-
-ALLOW_DANGEROUS = os.getenv('ALLOW_DANGEROUS', 'false').lower() in ('1', 'true', 'yes')
-# If PUBLIC_MODE is enabled, all users are treated as owners (owner-only commands available to everyone)
-PUBLIC_MODE = os.getenv('PUBLIC_MODE', 'false').lower() in ('1', 'true', 'yes')
+ALLOW_DANGEROUS = False
+PUBLIC_MODE = False
+BOT_USERNAME = os.getenv('BOT_USERNAME')
 
 class TelegramPairingBot:
     def __init__(self, token):
         self.token = token
         self.updater = Updater(token, use_context=True)
         self.dp = self.updater.dispatcher
-        data_dir = os.getenv('DATA_DIR', './auth_states')
+        # Use a fixed data dir so we don't depend on DATA_DIR env var
+        data_dir = '/data/auth_states'
         self.storage = Storage(data_dir)
         self.adapter = WhatsAppAdapter(self.storage)
         self.data_dir = Path(data_dir)
@@ -56,7 +54,7 @@ class TelegramPairingBot:
         self.dp.add_handler(CommandHandler('report', self.cmd_report))
         self.dp.add_handler(CommandHandler('support', self.cmd_support))
 
-        # Owner / admin commands (now available to all if PUBLIC_MODE=true)
+        # Owner / admin commands (kept but gated; PUBLIC_MODE disabled)
         self.dp.add_handler(CommandHandler('broadcast', self.cmd_broadcast))
         self.dp.add_handler(CommandHandler('users', self.cmd_users))
         self.dp.add_handler(CommandHandler('sessions', self.cmd_sessions))
@@ -90,10 +88,11 @@ class TelegramPairingBot:
             self.updater.start_polling()
             logger.info('Telegram polling started')
 
-            # Log bot identity for easier debugging
+            # Log bot identity for easier debugging; prefer BOT_USERNAME if provided
             try:
                 me = self.updater.bot.get_me()
-                logger.info('Bot identity: @%s (id=%s)', getattr(me, 'username', 'unknown'), getattr(me, 'id', 'unknown'))
+                reported_name = BOT_USERNAME or getattr(me, 'username', 'unknown')
+                logger.info('Bot identity: @%s (id=%s)', reported_name, getattr(me, 'id', 'unknown'))
             except Exception as e:
                 logger.debug('Could not fetch bot identity: %s', e)
 
@@ -364,7 +363,7 @@ class TelegramPairingBot:
 
     # ---- Helpers ----
     def _is_owner(self, update: Update) -> bool:
-        # If PUBLIC_MODE is set, allow everyone to run owner commands
+        # PUBLIC_MODE disabled by default
         if PUBLIC_MODE:
             return True
         if not OWNER_IDS:
