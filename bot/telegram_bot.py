@@ -79,8 +79,28 @@ class TelegramPairingBot:
 
     def run(self):
         logger.info('Starting Telegram bot')
-        self.updater.start_polling()
-        self.updater.idle()
+        try:
+            # Ensure any webhook is removed so polling can receive updates
+            try:
+                self.updater.bot.delete_webhook()
+                logger.info('Deleted existing Telegram webhook (if any)')
+            except Exception as we:
+                logger.debug('No webhook to delete or delete failed: %s', we)
+
+            self.updater.start_polling()
+            logger.info('Telegram polling started')
+
+            # Log bot identity for easier debugging
+            try:
+                me = self.updater.bot.get_me()
+                logger.info('Bot identity: @%s (id=%s)', getattr(me, 'username', 'unknown'), getattr(me, 'id', 'unknown'))
+            except Exception as e:
+                logger.debug('Could not fetch bot identity: %s', e)
+
+            self.updater.idle()
+        except Exception:
+            logger.exception('Telegram bot crashed')
+            raise
 
     # ---- User commands ----
     def cmd_start(self, update: Update, context: CallbackContext):
