@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  bot:
+    build: .
+    environment:
+      - TELEGRAM_TOKEN
+      - DATA_DIR=/data/auth_states
+      - PASS_PHRASE
+    volumes:
+      - ./auth_states:/data/auth_states
+    restart: unless-stopped
